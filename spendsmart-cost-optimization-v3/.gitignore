@@ -6,3 +6,10 @@ __pycache__/
 *.db
 data/raw/*
 !data/raw/.gitkeep
+.DS_Store
+*.zip
+*.pdf
+.venv/
+__pycache__/
+.env
+*.db
