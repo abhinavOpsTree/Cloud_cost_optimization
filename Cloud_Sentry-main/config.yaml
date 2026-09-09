@@ -1,0 +1,116 @@
+app:
+  name: "Cloud-Sentry AI"
+  version: "1.0.0"
+  account_id: "702037529261"
+  account_name: "opstree"
+
+llm:
+  primary_model: "gemini-3.6-flash"
+  fallback_model: "gemini-3.5-flash"
+  max_tokens_per_call: 1000
+  max_calls_per_run: 50
+  max_tokens_per_run: 50000
+  retry_attempts: 2
+  layer5_max_calls: 20
+
+data:
+  # ── LIVE DATA SOURCE ─────────────────────────────────
+  # Live data is loaded at runtime via:
+  #   core/uniteconpro_client.py  (billing + EC2 data)
+  #   core/cloudwatch_client.py   (CPU/memory metrics)
+  # The static Excel billing export used in the pilot
+  # has been replaced. No file input required.
+  # ─────────────────────────────────────────────────────
+  product_filter: "Compute Instance"
+  nat_product_filter: "NAT Gateway"
+  cache_path: "cache/enriched_instances.parquet"
+  nat_cache_path: "cache/nat_gateway_data.parquet"
+  state_db: "state/remediation.db"
+  exports_dir: "exports/"
+  tracked_instances:
+    - "i-09d6f63885df285cc"
+    - "i-042898099d6977b19"
+
+pilot_data:
+  # ── PILOT REFERENCE DATA (Feb-May 2026) ─────────────
+  # These figures are from the initial pilot run on the
+  # OpsTree AWS account (702037529261).
+  # Kept for historical reference and threshold 
+  # calibration only.
+  # Current live data comes from UnitEconPro API.
+  # ─────────────────────────────────────────────────────
+  date_range: "18 Feb 2026 to 19 May 2026"
+  pilot_days: 89
+  total_cost_90d: 1005.60
+  ec2_cost_90d: 583.25
+  nat_cost_90d: 356.89
+  dt_cost_90d: 65.39
+  unique_ec2: 279
+  instances_with_cpu_data: 18
+  instances_without_cpu_data: 261
+  eks_node_count: 61
+  hard_blocked_count: 2
+  spot_eligible_count: 94
+  spot_saving_monthly: 73.36
+  monthly_run_rate: 335.20
+  ec2_monthly: 194.42
+  nat_monthly: 118.96
+  dt_monthly: 21.80
+  total_rows: 16743
+
+thresholds:
+  rightsizing:
+    cpu_avg_severe_pct: 5.0
+    cpu_avg_over_pct: 15.0
+    net_in_flag_mbps: 20.0
+    net_out_flag_mbps: 20.0
+    cpu_max_spike_pct: 80.0
+  spot:
+    saving_estimate_pct: 65
+    min_confidence_for_auto_approve: 0.75
+  schedule:
+    timezone: "Asia/Kolkata"
+    critical_waste_threshold: 10.0
+    low_waste_threshold: 20.0
+    medium_waste_threshold: 30.0
+    critical_window: "09:00-21:00"
+    low_waste_window: "06:00-00:00"
+  governance:
+    tier3_confidence_threshold: 0.70
+    gemini_cache_days: 7
+  anomaly:
+    spike_multiplier: 1.3
+
+production_signals:
+  tag_keys: ["env", "environment", "Environment"]
+  tag_values: ["production", "Production", "prod",
+               "Prod", "PRODUCTION"]
+  name_patterns:
+    - "do not delete"
+    - "do no delete"
+
+eks_signals:
+  name_suffixes: ["-Node", "-standard-nodes-Node"]
+  tag_key_pattern: "kubernetes.io/cluster/"
+  tag_keys: ["eks:cluster-name", "aws:eks:cluster-name"]
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  cors_origins: ["http://localhost:8000",
+                 "http://127.0.0.1:8000"]
+
+security:
+  execution_pin_hash: "$2b$12$XGDzBioYiRF/HGq9CeFgfu8RWpWTMpXOml9ObNiDLQPpOYjcXBXeO"
+  pin_max_attempts: 3
+  pin_lockout_minutes: 5
+
+skill_contribution:
+  master_admin: "sandeep@opstree.com"
+  admins:
+    - "sandeep@opstree.com"
+    - "ritesh.rituraj@opstree.com"
+    - "harshit.verma@opstree.com"
+    - "rahul.khanna@opstree.com"
+    - "rajat.jain@opstree.com"
