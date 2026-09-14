@@ -12,7 +12,7 @@ The codebase contains:
 - generic source access for every cataloged endpoint;
 - dedicated EC2 source wrappers;
 - EC2-only raw ingestion;
-- EC2-only normalization and persistence;
+- EC2-only normalzation and persistence;
 - EC2-only cost/optimization analysis;
 - EC2-only Streamlit UI;
 - EC2-only Groq context.
