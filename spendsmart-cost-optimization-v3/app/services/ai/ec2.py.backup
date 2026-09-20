@@ -458,45 +458,21 @@ or Kubernetes configuration require changes unless supported by
 the supplied evidence.
 They may be validated when directly relevant.
 
-24. TAG_COMPLIANCE handling:
-    - If TAG_COMPLIANCE exists in cost_signals, you may report the exact
-      missing-tag requirement supplied by SpendSmart.
-    - You may recommend adding those explicitly supplied missing tags.
-    - Do not invent additional tags, governance rules, compliance
-      requirements, security requirements, or business policies.
+24. Do not claim that mandatory tags are required unless the supplied
+candidate evidence explicitly contains that requirement.
 
-25. PUBLIC_IP handling:
-    - PUBLIC_IP may be mentioned as supporting context when supplied.
-    - Do NOT recommend or discuss moving the instance or node group to
-      another subnet, private subnet, load balancer, NAT gateway, or VPC
-      as part of a rightsizing recommendation.
-    - Keep PUBLIC_IP optimization separate from rightsizing.
+25. Do not claim that a test node group exists.
+If staged validation is useful, describe it generically as a controlled
+or staged validation rather than inventing infrastructure.
 
-26. Do not claim that a staging environment, test environment, test
-node group, or separate node group exists.
-If staged validation is useful, describe it only as a controlled or
-staged rollout without inventing infrastructure.
-
-27. For EKS or ASG rightsizing:
-    - Apply the recommendation at the node-group / launch-template scope.
-    - Do not claim that scaling policies need modification unless the
-      supplied evidence explicitly says so.
-    - Scaling behavior may be validated before rollout, but do not state
-      that existing scaling configuration is incorrect.
-
-28. Do not invent EKS health-check configuration, security requirements,
-pod placement requirements, or other environment-specific requirements.
-You may recommend validating workload capacity, memory requirements,
-network requirements, and service health after a controlled rollout.
-
-29. Do not describe monthly savings or savings percentage as evidence
+26. Do not describe monthly savings or savings percentage as evidence
 of workload criticality.
 Savings represents financial impact.
 
-30. Risks should describe realistic consequences of the proposed
+27. Risks should describe realistic consequences of the proposed
 optimization without claiming that those conditions currently exist.
 
-31. Validation steps may request verification of unknown information,
+28. Validation steps may request verification of unknown information,
 but they must not claim that the unknown information is already true.
 
 Return ONLY valid JSON.
@@ -691,53 +667,12 @@ def _validate_recommendation_grounding(
             )
 
     # --------------------------------------------------------
-    # 3. Organizational requirement grounding
+    # 3. Unsupported organizational requirements
     # --------------------------------------------------------
-
-    cost_signals = (
-        context.get("cost_signals")
-        or []
-    )
-
-    # SpendSmart may explicitly provide TAG_COMPLIANCE
-    # evidence. In that case the LLM is allowed to reference
-    # the supplied tag requirement.
-    has_tag_compliance_evidence = any(
-        str(
-            signal.get(
-                "signal_type",
-                "",
-            )
-        ).upper()
-        == "TAG_COMPLIANCE"
-        for signal in cost_signals
-        if isinstance(
-            signal,
-            dict,
-        )
-    )
-
-    tag_policy_phrases = [
+     
+    unsupported_policy_phrases = [
         "mandatory tags",
         "required tags",
-    ]
-
-    for phrase in tag_policy_phrases:
-
-        if (
-            phrase in recommendation_text
-            and not has_tag_compliance_evidence
-        ):
-
-            errors.append(
-                "unsupported organizational requirement: "
-                + phrase
-            )
-
-    # These organizational requirements are still blocked.
-    # We currently do not have deterministic evidence for
-    # them in the recommendation context.
-    unsupported_policy_phrases = [
         "compliance requirement",
         "compliance requirements",
         "maintenance window",
@@ -745,6 +680,7 @@ def _validate_recommendation_grounding(
         "sla requirement",
         "sla requirements",
     ]
+    
 
     for phrase in unsupported_policy_phrases:
 
@@ -1083,10 +1019,6 @@ def generate_candidate_recommendation(
     EC2 optimization candidate.
 
     The deterministic candidate fields remain canonical.
-
-    The LLM gets one initial attempt. If the response fails
-    JSON, schema, or grounding validation, it gets one
-    correction attempt using the validation error as feedback.
     """
 
     instance_id = candidate.get(
@@ -1155,7 +1087,7 @@ def generate_candidate_recommendation(
         )
 
     # --------------------------------------------------------
-    # Groq client
+    # Groq
     # --------------------------------------------------------
 
     from groq import Groq
@@ -1166,167 +1098,75 @@ def generate_candidate_recommendation(
         )
     )
 
-    system_prompt = (
-        _recommendation_system_prompt()
+    logger.info(
+        (
+            "Calling EC2 recommendation LLM | "
+            "instance_id=%s | provider=%s | model=%s"
+        ),
+        instance_id,
+        provider,
+        settings.llm_model,
     )
 
-    candidate_prompt = (
-        "Generate the EC2 optimization recommendation "
-        "using this candidate evidence:\n\n"
-        + json.dumps(
-            context,
-            default=str,
-            indent=2,
-        )
-    )
-
-    # --------------------------------------------------------
-    # Maximum two attempts:
-    #   attempt 1 = normal generation
-    #   attempt 2 = correction after validation failure
-    # --------------------------------------------------------
-
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {
-            "role": "user",
-            "content": candidate_prompt,
-        },
-    ]
-
-    last_error: Exception | None = None
-
-    for attempt in range(
-        1,
-        3,
-    ):
-
-        logger.info(
-            (
-                "Calling EC2 recommendation LLM | "
-                "instance_id=%s | provider=%s | "
-                "model=%s | attempt=%s/2"
-            ),
-            instance_id,
-            provider,
-            settings.llm_model,
-            attempt,
-        )
-
-        response = (
-            client.chat.completions.create(
-                model=settings.llm_model,
-                temperature=0.1,
-                messages=messages,
-            )
-        )
-
-        content = (
-            response
-            .choices[0]
-            .message
-            .content
-            or ""
-        )
-
-        try:
-
-            recommendation = (
-                _parse_llm_json(
-                    content,
-                    context,
-                )
-            )
-
-            logger.info(
-                (
-                    "EC2 recommendation agent completed | "
-                    "instance_id=%s | attempt=%s"
-                ),
-                instance_id,
-                attempt,
-            )
-
-            return {
-                "llm_used": True,
-                "llm_provider": provider,
-                "llm_model": settings.llm_model,
-                "recommendation": recommendation,
-            }
-
-        except ValueError as exc:
-
-            last_error = exc
-
-            logger.warning(
-                (
-                    "EC2 recommendation validation failed | "
-                    "instance_id=%s | attempt=%s/2 | "
-                    "error=%s"
-                ),
-                instance_id,
-                attempt,
-                str(exc),
-            )
-
-            # No more retries after attempt 2.
-            if attempt >= 2:
-                break
-
-            # ------------------------------------------------
-            # Give the model its invalid response plus the
-            # deterministic validation error and request a
-            # corrected JSON response.
-            # ------------------------------------------------
-
-            messages.append(
+    response = (
+        client.chat.completions.create(
+            model=settings.llm_model,
+            temperature=0.1,
+            messages=[
                 {
-                    "role": "assistant",
-                    "content": content,
-                }
-            )
-
-            messages.append(
+                    "role": "system",
+                    "content": (
+                        _recommendation_system_prompt()
+                    ),
+                },
                 {
                     "role": "user",
                     "content": (
-                        "Your previous recommendation failed "
-                        "deterministic grounding validation.\n\n"
-                        "Validation error:\n"
-                        + str(exc)
-                        + "\n\n"
-                        "Correct the recommendation using ONLY "
-                        "the original candidate evidence. "
-                        "Remove unsupported claims or actions. "
-                        "Do not add new assumptions. "
-                        "Preserve the required JSON schema and "
-                        "return ONLY corrected valid JSON."
+                        "Generate the EC2 optimization "
+                        "recommendation using this "
+                        "candidate evidence:\n\n"
+                        + json.dumps(
+                            context,
+                            default=str,
+                            indent=2,
+                        )
                     ),
-                }
-            )
+                },
+            ],
+        )
+    )
+
+    content = (
+        response
+        .choices[0]
+        .message
+        .content
+        or ""
+    )
 
     # --------------------------------------------------------
-    # Both attempts failed
+    # Parse + schema validate + grounding validate
     # --------------------------------------------------------
 
-    logger.error(
+    recommendation = _parse_llm_json(
+        content,
+        context,
+    )
+
+    logger.info(
         (
-            "EC2 recommendation agent exhausted retries | "
-            "instance_id=%s | error=%s"
+            "EC2 recommendation agent completed | "
+            "instance_id=%s"
         ),
         instance_id,
-        str(last_error),
     )
 
-    if last_error is not None:
-        raise last_error
-
-    raise ValueError(
-        "EC2 recommendation generation failed"
-    )
+    return {
+        "llm_used": True,
+        "llm_provider": provider,
+        "llm_model": settings.llm_model,
+        "recommendation": recommendation,
+    }
 
 
 # ============================================================
